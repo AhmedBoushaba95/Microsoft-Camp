@@ -27,52 +27,138 @@ class App extends Component {
         this.state = {
             response: "",
             nbMsg: 0,
-            conversation: []
+            msgApi: 0,
+            idConversation: "",
+            conversation: [],
+            loading: true
         }
     }
 
+    componentWillMount() {
+        fetch("https://directline.botframework.com/api/conversations", {
+            method: 'POST',
+            headers: {
+                Authorization: 'Bearer aDgDHJDvtXQ.cwA.5iM.7dg1yBydyqmtqOSZbjdmgDm7XU_6uSnY5sguq6fc0W8',
+            }})
+            .then((response) => response.json())
+            .then((responseData) => {
+                this.setState({
+                    idConversation: responseData.conversationId,
+                    loading: false
+                })
+})
+            .done();
+    }
+
+    _sendHumanAnswer = () => {
+        fetch("https://directline.botframework.com/api/conversations/"+this.state.idConversation+"/messages", {
+            method: 'POST',
+            headers: {
+                Authorization: 'Bearer aDgDHJDvtXQ.cwA.5iM.7dg1yBydyqmtqOSZbjdmgDm7XU_6uSnY5sguq6fc0W8',
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                text: this.state.response,
+                user: 'Human',
+            }),
+        })
+            .then(() => {
+                this._getBotAnswer()
+            })
+            .done();
+    }
+
+    _getBotAnswer = () => {
+        fetch("https://directline.botframework.com/api/conversations/"+this.state.idConversation+"/messages", {
+            headers: {
+                Authorization: 'Bearer aDgDHJDvtXQ.cwA.5iM.7dg1yBydyqmtqOSZbjdmgDm7XU_6uSnY5sguq6fc0W8',
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+            },
+        })
+            .then((response) => response.json())
+            .then((responseJson) => {
+                if (responseJson.messages.length === this.state.nbMsg)
+                    this._getBotAnswer();
+                else {
+                    var msg = this.state.nbMsg;
+                    while (msg < responseJson.messages.length) {
+                        this._apprendBotAnswer(responseJson.messages[msg].text);
+                        msg++;
+                    }
+                }
+            })
+            .done();
+    }
+
+    _apprendBotAnswer = (answer) => {
+        this.setState({nbMsg: this.state.nbMsg+=1});
+        var conversationPush = this.state.conversation.slice();
+        conversationPush.push({key: this.state.nbMsg, msg: answer, from: "Bot"});
+        this.setState({
+            conversation: conversationPush,
+        });
+    }
 
     _appendHumanAnswer = () => {
-        this.setState({nbMsg: this.state.nbMsg++});
+        this.setState({nbMsg: this.state.nbMsg+=1});
         var conversationPush = this.state.conversation.slice();
         conversationPush.push({key: this.state.nbMsg, msg: this.state.response, from: "Human"});
+        this._sendHumanAnswer();
         this.setState({
             conversation: conversationPush,
             response: ""
         });
     }
 
+    _isHuman = (from) => {
+        if (from === "Human")
+            return true;
+        return false;
+    }
+
     render() {
-        return (
-            <View style={styles.container}>
-                <View style={styles.header}>
-                </View>
-                <ScrollView>
-                    <View style={styles.viewTextBotAnswer}>
-                        <Text style={styles.textAnswer}>hello</Text>
+        if (!this.state.loading)
+            return (
+                <View style={styles.container}>
+                    <View style={styles.header}>
                     </View>
-                    <View>
-                        <FlatList
-                            data={this.state.conversation}
-                            renderItem={({item}) =>
-                                <View style={styles.viewTextHumanAnswer}>
-                                    <Text style={styles.textAnswer}>{item.msg}</Text>
-                                </View>
-                            }
-                        />
-                    </View>
-                </ScrollView>
-                <View style={styles.footer}>
-                    <TextInput style={styles.inputAnswer} underlineColorAndroid='transparent' placeholder='Envoyer un message'
-                               onChangeText={(response) => this.setState({response})} value={this.state.response}/>
-                    <TouchableOpacity onPress={() => this._appendHumanAnswer()}>
-                        <View style={styles.buttonAnswer}>
-                            <Text style={styles.textButtonAnswer}>Envoyer</Text>
+                    <ScrollView>
+                        <Text>{this.state.data}</Text>
+                        <View>
+                            <FlatList
+                                data={this.state.conversation}
+                                renderItem={({item}) =>
+                                    this._isHuman(item.from) &&
+                                    <View style={styles.viewTextHumanAnswer}>
+                                        <Text style={styles.textAnswer}>{item.msg}</Text>
+                                    </View> ||
+                                    !this._isHuman(item.from) &&
+                                    <View style={styles.viewTextBotAnswer}>
+                                        <Text style={styles.textAnswer}>{item.msg}</Text>
+                                    </View>
+                                }
+                            />
                         </View>
-                    </TouchableOpacity>
+                    </ScrollView>
+                    <View style={styles.footer}>
+                        <TextInput style={styles.inputAnswer} underlineColorAndroid='transparent' placeholder='Envoyer un message'
+                                   onChangeText={(response) => this.setState({response})} value={this.state.response}/>
+                        <TouchableOpacity onPress={() => this._appendHumanAnswer()}>
+                            <View style={styles.buttonAnswer}>
+                                <Text style={styles.textButtonAnswer}>Envoyer</Text>
+                            </View>
+                        </TouchableOpacity>
+                    </View>
                 </View>
-            </View>
-        );
+            );
+        else
+            return (
+                <View>
+                    <Text>On attend hein..</Text>
+                </View>
+            );
     }
 }
 
