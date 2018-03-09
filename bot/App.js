@@ -19,6 +19,8 @@ import {
 
 let width = Dimensions.get('window').width; //full width
 let height = Dimensions.get('window').height; //full height
+let token = 'Bearer aDgDHJDvtXQ.cwA.5iM.7dg1yBydyqmtqOSZbjdmgDm7XU_6uSnY5sguq6fc0W8';
+let key = 'b51d0f39d02c4efcbd92856214932bc7';
 
 class App extends Component {
 
@@ -26,6 +28,7 @@ class App extends Component {
         super();
         this.state = {
             response: "",
+            buttonResponse: "",
             nbMsg: 0,
             msgApi: 0,
             idConversation: "",
@@ -38,7 +41,7 @@ class App extends Component {
         fetch("https://directline.botframework.com/api/conversations", {
             method: 'POST',
             headers: {
-                Authorization: 'Bearer aDgDHJDvtXQ.cwA.5iM.7dg1yBydyqmtqOSZbjdmgDm7XU_6uSnY5sguq6fc0W8',
+                Authorization: token,
             }})
             .then((response) => response.json())
             .then((responseData) => {
@@ -46,20 +49,86 @@ class App extends Component {
                     idConversation: responseData.conversationId,
                     loading: false
                 })
-})
+            })
             .done();
     }
 
-    _sendHumanAnswer = () => {
+    _getLanguage = () => {
+        fetch('https://dev.microsofttranslator.com/languages?api-version=1.0&scope=speech', {
+            headers: {
+                Accept: 'application/json',
+                'Accept-Language': 'fr'
+            }})
+            .then((response) => response.json())
+            .done();
+    }
+
+    _getToken = () => {
+        fetch('https://api.cognitive.microsoft.com/sts/v1.0/issueToken', {
+            method: 'POST',
+            headers: {
+                'Ocp-Apim-Subscription-Key': key,
+                'Content-Type': 'application/json',
+                Accept: 'application/jwt',
+
+            }})
+            .then((response) => response.json())
+            .done();
+    }
+
+    _speechTranslator = () => {
+
+        var ws = wsClient();
+
+        
+
+        fetch('wss://dev.microsofttranslator.com/speech/translate?api-version=1.0&from=en&to=fr', {
+            headers: {
+                'Ocp-Apim-Subscription-Key': key,
+
+
+            }})
+            .then((response) => response.json())
+            .done();
+    }
+
+    _getBotAnswer = () => {
+        fetch("https://directline.botframework.com/api/conversations/"+this.state.idConversation+"/messages", {
+            headers: {
+                Authorization: token,
+                Accept: 'application/json',
+                'Content-Type': 'application/json',
+            },
+        })
+            .then((response) => response.json())
+            .then((responseJson) => {
+                if (responseJson.messages.length === this.state.nbMsg) {
+                    this._getBotAnswer();
+                }
+                else {
+                    var msg = this.state.nbMsg;
+                    while (msg < responseJson.messages.length) {
+                        if (this._isOptionBotAnswer(responseJson.messages[msg].text)) {
+                            this._createChoice(responseJson.messages[msg].text);
+                        }
+                        this._apprendBotAnswer(responseJson.messages[msg].text);
+                        msg++;
+                    }
+                }
+            })
+            .done();
+    }
+    _sendHumanAnswer = (answer) => {
+        Alert.alert(this.state.idConversation)
         fetch("https://directline.botframework.com/api/conversations/"+this.state.idConversation+"/messages", {
             method: 'POST',
             headers: {
-                Authorization: 'Bearer aDgDHJDvtXQ.cwA.5iM.7dg1yBydyqmtqOSZbjdmgDm7XU_6uSnY5sguq6fc0W8',
+                Authorization: token,
                 Accept: 'application/json',
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                text: this.state.response,
+                text: answer,
                 user: 'Human',
             }),
         })
@@ -68,30 +137,6 @@ class App extends Component {
             })
             .done();
     }
-
-    _getBotAnswer = () => {
-        fetch("https://directline.botframework.com/api/conversations/"+this.state.idConversation+"/messages", {
-            headers: {
-                Authorization: 'Bearer aDgDHJDvtXQ.cwA.5iM.7dg1yBydyqmtqOSZbjdmgDm7XU_6uSnY5sguq6fc0W8',
-                Accept: 'application/json',
-                'Content-Type': 'application/json',
-            },
-        })
-            .then((response) => response.json())
-            .then((responseJson) => {
-                if (responseJson.messages.length === this.state.nbMsg)
-                    this._getBotAnswer();
-                else {
-                    var msg = this.state.nbMsg;
-                    while (msg < responseJson.messages.length) {
-                        this._apprendBotAnswer(responseJson.messages[msg].text);
-                        msg++;
-                    }
-                }
-            })
-            .done();
-    }
-
     _apprendBotAnswer = (answer) => {
         this.setState({nbMsg: this.state.nbMsg+=1});
         var conversationPush = this.state.conversation.slice();
@@ -100,18 +145,51 @@ class App extends Component {
             conversation: conversationPush,
         });
     }
-
-    _appendHumanAnswer = () => {
-        this.setState({nbMsg: this.state.nbMsg+=1});
+    _appendHumanAnswer = (buttonValue) => {
+        this.setState({ nbMsg: this.state.nbMsg+=1 });
         var conversationPush = this.state.conversation.slice();
-        conversationPush.push({key: this.state.nbMsg, msg: this.state.response, from: "Human"});
-        this._sendHumanAnswer();
+        conversationPush.push({key: this.state.nbMsg, msg: buttonValue, from: "Human"});
+        this._sendHumanAnswer(buttonValue);
         this.setState({
             conversation: conversationPush,
             response: ""
         });
     }
-
+    _createChoice = (msg) => {
+        var find = "";
+        var len =  (msg.match(/\*/g) || []).length;
+        if (len) {
+            var i = 1;
+            while (i < len) {
+                find += "(\\*\\s(.+)\\s+)";
+                i++;
+            }
+            find += "(\\*\\s(.+))";
+        }
+        var result = msg.match(find);
+        result.splice(0, 1);
+        i = 0;
+        while (i < len) {
+            result.splice(i, 1);
+            i++;
+        }
+        j = 0;
+        while (j < result.length) {
+            if (result[j]) {
+                var conversationPush = this.state.conversation.slice();
+                conversationPush.push({key: this.state.nbMsg, msg: msg, value: result[j], from: "Bot"});
+                this.setState({
+                    conversation: conversationPush,
+                });
+            }
+            j++;
+        }
+    }
+    _isOptionBotAnswer = (msg) => {
+        if (/Options:/.test(msg))
+            return true;
+        return false;
+    }
     _isHuman = (from) => {
         if (from === "Human")
             return true;
@@ -134,10 +212,18 @@ class App extends Component {
                                     <View style={styles.viewTextHumanAnswer}>
                                         <Text style={styles.textAnswer}>{item.msg}</Text>
                                     </View> ||
-                                    !this._isHuman(item.from) &&
+                                    !this._isHuman(item.from) && !this._isOptionBotAnswer(item.msg) &&
                                     <View style={styles.viewTextBotAnswer}>
                                         <Text style={styles.textAnswer}>{item.msg}</Text>
-                                    </View>
+                                    </View> ||
+                                    !this._isHuman(item.from) && this._isOptionBotAnswer(item.msg) &&
+                                    item.value &&
+                                    <TouchableOpacity onPress={() => this._appendHumanAnswer(item.value)}>
+                                        <View style={styles.viewTextHumanButtonAnswer}>
+                                            <Text style={styles.textButtonAnswer}>{item.value}</Text>
+                                        </View>
+                                    </TouchableOpacity>
+
                                 }
                             />
                         </View>
@@ -145,7 +231,7 @@ class App extends Component {
                     <View style={styles.footer}>
                         <TextInput style={styles.inputAnswer} underlineColorAndroid='transparent' placeholder='Envoyer un message'
                                    onChangeText={(response) => this.setState({response})} value={this.state.response}/>
-                        <TouchableOpacity onPress={() => this._appendHumanAnswer()}>
+                        <TouchableOpacity onPress={() => this._appendHumanAnswer(this.state.response)}>
                             <View style={styles.buttonAnswer}>
                                 <Text style={styles.textButtonAnswer}>Envoyer</Text>
                             </View>
@@ -210,6 +296,18 @@ const styles = StyleSheet.create({
         margin: width/20,
         marginLeft: width/5,
         padding: width/20,
+    },
+    viewTextHumanButtonAnswer: {
+        backgroundColor: "#F5D0A9",
+        borderRadius: 5,
+        marginLeft: width/20,
+        marginBottom: width/60,
+        marginRight: width/5,
+        padding: width/40,
+    },
+    textButtonAnswer: {
+        fontSize: 18,
+        color: '#FFFFFF'
     },
 });
 
